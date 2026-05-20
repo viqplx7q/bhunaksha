@@ -1,7 +1,7 @@
 # BhuNaksha Jharkhand - Offline Map Viewer
 
 Jharbhunaksha portal ka offline map viewer for all 22 districts of Jharkhand.  
-**Live:** https://viqplx7q.github.io/bhunaksha/
+**Live:** https://mundaxa.github.io/bhunaksha/
 
 ## Features
 
@@ -54,5 +54,5 @@ Maps rendered via **GeoServer WMS** with 6 overlay layer IDs.
 
 - OpenLayers 4.6.5 (local copy)
 - Vanilla JavaScript
-- WMS overlay layers for plot boundaries, khata boundaries, and labels
+    - WMS overlay layers for plot boundaries, khata boundaries, and labels
 - Offline-first: all assets (JS, CSS, fonts, data) bundled locally
