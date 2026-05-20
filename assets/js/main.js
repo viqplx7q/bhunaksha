@@ -94,7 +94,6 @@ function onDistrictChange() {
   document.getElementById('sel_mouza').disabled = true;
   document.getElementById('btn_go').disabled = true;
   populateCircles();
-  disablePlotSearch();
 }
 
 /* ── Selectors ── */
@@ -184,8 +183,8 @@ function loadMap() {
   }
   currentExtent = [ex.xmin, ex.ymin, ex.xmax, ex.ymax];
   document.getElementById('plotinfo').innerHTML = '<b>'+dist.name+'</b> &rarr; '+cname+' &rarr; '+hname+' &rarr; '+mcode+' '+mname+'<br><span style=color:#888;font-size:11px>GIS: '+gisCode+'</span>';
+  clearClickMarker();
   initMap(gisCode, currentExtent);
-  enablePlotSearch();
 }
 
 function initMap(gisCode, extent) {
@@ -226,16 +225,8 @@ function initMap(gisCode, extent) {
   map.addControl(new ol.control.ScaleLine({units:'metric'}));
   map.on('click', function(e) {
     var infoEl = document.querySelector('#plotinfo');
-    var xy = 'X:'+e.coordinate[0].toFixed(1)+' Y:'+e.coordinate[1].toFixed(1);
-    infoEl.innerHTML += '<br><span style=color:#666;font-size:11px>'+xy+'</span>';
-    fetch('https://jharbhunaksha.jharkhand.gov.in/rest/MapInfo/getPlotAtXY', {
-      method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'},
-      body:'state=20&giscode='+currentGisCode+'&x='+e.coordinate[0]+'&y='+e.coordinate[1]
-    }).then(function(r){if(!r.ok)throw Error();return r.json();})
-    .then(function(d){
-      if(d&&d.kide) infoEl.innerHTML += ' <b>Plot: '+d.kide+'</b>';
-      if(d&&d.id) addPlotHighlightLayer(d.id);
-    }).catch(function(){});
+    infoEl.innerHTML += '<br><span style=color:#666;font-size:11px>X:'+e.coordinate[0].toFixed(1)+' Y:'+e.coordinate[1].toFixed(1)+'</span>';
+    setClickMarker(e.coordinate);
   });
   map.on('moveend', function() {
     var z = map.getView().getZoom();
@@ -317,110 +308,34 @@ function selectFromSearch(dcode, ccode, hcode, mcode) {
   enableGo();
   loadMap();
 }
-/* ── Plot Search (after map load) ── */
-var plotSearchLayer = null;
-var plotHighlightLayer = null;
+/* ── Click Marker ── */
+var clickMarkerEl = null;
+var clickMarkerOverlay = null;
 
-function enablePlotSearch() {
-  var panel = document.getElementById('panel-plot-search');
-  if (panel) panel.style.display = 'block';
+function clearClickMarker() {
+  if (clickMarkerOverlay) { map.removeOverlay(clickMarkerOverlay); clickMarkerOverlay = null; }
+  if (clickMarkerEl) { clickMarkerEl.parentNode && clickMarkerEl.parentNode.removeChild(clickMarkerEl); clickMarkerEl = null; }
 }
 
-function disablePlotSearch() {
-  document.getElementById('panel-plot-search').style.display = 'none';
-  clearPlotSearch();
-}
-
-function searchPlot() {
-  var q = document.getElementById('plotSearchInput').value.trim();
-  if (!q || !map || !currentGisCode) return;
-  var results = document.getElementById('plotSearchResults');
-  results.innerHTML = '<span style="color:#888;">Searching...</span>';
-  clearPlotSearch();
-
-  // 1. Add PLOT_LIST highlight layer for the whole mouza
-  plotHighlightLayer = new ol.layer.Image({
-    source: new ol.source.ImageWMS({
-      url: 'https://jharbhunaksha.jharkhand.gov.in/WMS',
-      params: {
-        'LAYERS': 'PLOT_LIST',
-        'STYLES': 'PLOT_SELECTION',
-        'TRANSPARENT': true,
-        'STATE': '20',
-        'gis_code': currentGisCode
-      },
-      serverType: 'geoserver'
-    }),
-    opacity: 0.7
+function setClickMarker(coordinate) {
+  if (clickMarkerOverlay) map.removeOverlay(clickMarkerOverlay);
+  if (clickMarkerEl) { clickMarkerEl.parentNode && clickMarkerEl.parentNode.removeChild(clickMarkerEl); }
+  clickMarkerEl = document.createElement('div');
+  clickMarkerEl.className = 'click-marker';
+  clickMarkerEl.innerHTML = '<div class="click-marker-dot"></div><div class="click-marker-label">X:' + coordinate[0].toFixed(1) + ' Y:' + coordinate[1].toFixed(1) + '</div>';
+  clickMarkerOverlay = new ol.Overlay({
+    element: clickMarkerEl,
+    positioning: 'bottom-center',
+    offset: [0, -5]
   });
-  map.addLayer(plotHighlightLayer);
-
-  // 2. Try to get exact plot location from the API
-  var cx = (currentExtent[0] + currentExtent[2]) / 2;
-  var cy = (currentExtent[1] + currentExtent[3]) / 2;
-  fetch('https://jharbhunaksha.jharkhand.gov.in/rest/MapInfo/getPlotAtXY', {
-    method: 'POST',
-    headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-    body: 'state=20&giscode=' + currentGisCode + '&x=' + cx + '&y=' + cy
-  })
-  .then(function(r) { if (!r.ok) throw Error(r.status); return r.json(); })
-  .then(function(data) {
-    if (data && data.id) {
-      plotSearchLayer = new ol.layer.Image({
-        source: new ol.source.ImageWMS({
-          url: 'https://jharbhunaksha.jharkhand.gov.in/WMS',
-          params: {
-            'LAYERS': 'PLOT_LIST',
-            'STYLES': 'PLOT_SELECTION',
-            'TRANSPARENT': true,
-            'STATE': '20',
-            'gis_code': currentGisCode,
-            'plot_id': data.id
-          },
-          serverType: 'geoserver'
-        }),
-        opacity: 0.9
-      });
-      map.addLayer(plotSearchLayer);
-      var kide = data.kide || '';
-      results.innerHTML = '<span style="color:#4a7a3a;">Plot ' + q + ' searched. Plot ' + kide + ' highlighted.</span>';
-      if (data.center_x && data.center_y) {
-        map.getView().setCenter([parseFloat(data.center_x), parseFloat(data.center_y)]);
-      }
-    }
-  })
-  .catch(function() {
-    results.innerHTML = '<span style="color:#888;">Applied. Plot highlight layer added.</span>';
-  });
-
-  if (currentExtent) map.getView().fit(currentExtent, {padding: [30,30,30,30]});
-}
-
-function addPlotHighlightLayer(plotId) {
-  if (!plotId) return;
-  clearPlotSearch();
-  plotSearchLayer = new ol.layer.Image({
-    source: new ol.source.ImageWMS({
-      url:'https://jharbhunaksha.jharkhand.gov.in/WMS',
-      params:{'LAYERS':'PLOT_LIST','STYLES':'PLOT_SELECTION','TRANSPARENT':true,'STATE':'20','gis_code':currentGisCode,'plot_id':plotId},
-      serverType:'geoserver'
-    }),
-    opacity:0.9
-  });
-  map.addLayer(plotSearchLayer);
-}
-
-function clearPlotSearch() {
-  if (plotSearchLayer) { map.removeLayer(plotSearchLayer); plotSearchLayer = null; }
-  if (plotHighlightLayer) { map.removeLayer(plotHighlightLayer); plotHighlightLayer = null; }
-  document.getElementById('plotSearchInput').value = '';
-  document.getElementById('plotSearchResults').innerHTML = '';
+  clickMarkerOverlay.setPosition(coordinate);
+  map.addOverlay(clickMarkerOverlay);
 }
 
 /* ── Init ── */
 document.getElementById('sel_dist').addEventListener('change', onDistrictChange);
 document.getElementById('sel_mouza').addEventListener('keydown', function(e){if(e.key==='Enter')loadMap();});
-document.getElementById('plotSearchInput').addEventListener('keydown', function(e){if(e.key==='Enter')searchPlot();});
+
 document.getElementById('sel_circle').addEventListener('change',function(){populateHalkas();populateMouzas();enableGo();});
 document.getElementById('sel_halka').addEventListener('change',function(){populateMouzas();enableGo();});
 document.getElementById('sel_mouza').addEventListener('change',enableGo);
